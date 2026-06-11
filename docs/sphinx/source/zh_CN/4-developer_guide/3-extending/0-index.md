@@ -30,6 +30,12 @@
 在冷路径上扩展地形生成。
 :::
 
+:::{grid-item-card} MDP 与坐标系
+:link: 5-task_mdp_and_frames
+:link-type: doc
+先对齐 frame 语义，再讨论 observation、reward 与 termination。
+:::
+
 ::::
 
 ```{toctree}
@@ -39,4 +45,5 @@
 2-new_backend
 3-new_algorithm
 4-new_terrain
+5-task_mdp_and_frames
 ```
