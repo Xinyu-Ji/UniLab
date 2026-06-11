@@ -36,6 +36,12 @@
 先对齐 frame 语义，再讨论 observation、reward 与 termination。
 :::
 
+:::{grid-item-card} MyoSuite Walk
+:link: 6-myosuite_walk_mdp
+:link-type: doc
+把 `myoLegWalk-v0` 拆成可迁移的动作、观测、奖励与终止方案。
+:::
+
 ::::
 
 ```{toctree}
@@ -46,4 +52,5 @@
 3-new_algorithm
 4-new_terrain
 5-task_mdp_and_frames
+6-myosuite_walk_mdp
 ```
