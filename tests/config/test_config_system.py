@@ -274,6 +274,24 @@ def test_offpolicy_g1_walk_flat_motrix_preserves_backend_specific_algo_value():
     assert motrix_cfg.algo.use_symmetry is False
 
 
+def test_offpolicy_myoleg_walk_flat_mujoco_sac_composes():
+    cfg = _compose("offpolicy", overrides=["algo=sac", "task=sac/myoleg_walk_flat/mujoco"])
+
+    assert cfg.training.task_name == "MyoLegWalkFlat"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.algo.algo == "sac"
+    assert cfg.algo.num_envs == 1024
+    assert cfg.algo.use_symmetry is False
+    assert cfg.algo.obs_normalization is True
+    assert cfg.algo.actor_hidden_dim == 1024
+    assert cfg.algo.critic_hidden_dim == 1024
+    assert cfg.env.post_step_forward_sensor is True
+    assert cfg.env.reset_type == "random"
+    assert cfg.env.sim_dt == pytest.approx(0.001)
+    assert cfg.env.ctrl_dt == pytest.approx(0.01)
+    assert cfg.reward.scales.vel_reward == pytest.approx(5.0)
+
+
 def test_ppo_g1_backend_specific_hyperparams_remain_separate():
     mujoco_cfg = _compose("ppo", overrides=["task=g1_walk_flat/mujoco"])
     motrix_cfg = _compose("ppo", overrides=["task=g1_walk_flat/motrix"])

@@ -224,6 +224,10 @@ critic 输入维度为 `403`，action dim 为 `80`。mean reward 约从 `36.85`
 ## 当前风险与限制
 
 - 这是 MuJoCo-only MVP，Motrix 尚未实现 MyoLeg muscle contract。
+- 已新增 SAC owner：`task=sac/myoleg_walk_flat/mujoco`。该入口复用同一个
+  faithful MyoLeg env，并将 `use_symmetry=false`，因为 MyoLeg 当前没有声明
+  UniLab symmetry augmentation contract。SAC owner 默认采用 `reset_type=random`，
+  更接近 MyoSuite DEP-RL baseline 的训练条件。
 - MyoSuite package 级 diff 已在隔离环境 `/tmp/unilab-myoleg-myodiff` 中执行，避免污染
   UniLab 主 uv 环境。结论是 reset 后核心 MDP 字段基本一致；为对齐 step dynamics，
   MyoLeg owner config 采用 MyoSuite faithful timing：`sim_dt=0.001`、
@@ -242,7 +246,7 @@ critic 输入维度为 `403`，action dim 为 `80`。mean reward 约从 `36.85`
 
 ## 下一步建议
 
-1. 做更长的 PPO smoke，观察 reward 曲线、NaN guard、episode length。
+1. 对比 PPO 与 SAC 在相同步数下的 reward、episode length、action entropy/std。
 2. 梳理资产依赖，删除确认未引用的冗余 scene / mesh 文件。
 3. 若要支持 Motrix，先扩展 Motrix backend muscle actuator contract，不要在 env
    层分支读取 backend 私有能力。
