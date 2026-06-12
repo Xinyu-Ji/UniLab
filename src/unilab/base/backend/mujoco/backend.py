@@ -78,15 +78,28 @@ def _prepare_variant_model_xml(
     model_file: str,
     *,
     add_body_sensors: bool,
+    enable_actuator_sensors: bool,
     base_name: str | None,
+    geom_overrides: dict[str, dict] | None = None,
 ) -> tuple[str, list[str]]:
     from unilab.base.backend.mujoco.xml import (
         create_discardvisual_xml,
+        inject_mujoco_actuator_sensors,
         inject_mujoco_tracking_sensors,
+        materialize_mujoco_geom_overrides_xml,
     )
 
     model_path = create_discardvisual_xml(model_file)
     tmp_paths = [model_path]
+    if geom_overrides:
+        model_path = materialize_mujoco_geom_overrides_xml(
+            model_path,
+            geom_overrides=geom_overrides,
+        )
+        tmp_paths.append(model_path)
+    if enable_actuator_sensors:
+        model_path = inject_mujoco_actuator_sensors(model_path)
+        tmp_paths.append(model_path)
     if add_body_sensors:
         model_path, _, _ = inject_mujoco_tracking_sensors(
             model_path,
@@ -100,16 +113,20 @@ def _compile_model_variant_chunk_to_mjb(
     *,
     model_file: str,
     add_body_sensors: bool,
+    enable_actuator_sensors: bool,
     base_name: str | None,
     sim_dt: float,
     iterations: int | None,
     position_actuator_gains: dict | None,
+    geom_overrides: dict[str, dict] | None,
     variants: tuple[ModelVariantSpec, ...],
 ) -> tuple[str, ...]:
     model_path, tmp_paths = _prepare_variant_model_xml(
         model_file,
         add_body_sensors=add_body_sensors,
+        enable_actuator_sensors=enable_actuator_sensors,
         base_name=base_name,
+        geom_overrides=geom_overrides,
     )
     output_dir = tempfile.mkdtemp(prefix="unilab-mj-variant-")
     try:
@@ -275,10 +292,12 @@ class MuJoCoBackend(SimBackend):
         base_name: Optional[str] = None,
         np_dtype=None,
         add_body_sensors: bool = False,
+        enable_actuator_sensors: bool = False,
         position_actuator_gains: dict | None = None,
         iterations: int | None = None,
         push_body_name: Optional[str] = None,
         post_step_forward_sensor: bool = False,
+        geom_overrides: dict[str, dict] | None = None,
     ):
         scene_context = _build_mujoco_scene_context(scene)
         self.scene_model_file = scene_context.model_file
@@ -288,12 +307,14 @@ class MuJoCoBackend(SimBackend):
         self.terrain_surface_sampler = scene_context.terrain_surface_sampler
         self._scene_cleanup_handle = scene_context.cleanup_handle
         self.add_body_sensors = add_body_sensors
+        self.enable_actuator_sensors = bool(enable_actuator_sensors)
         self._base_name = base_name
         self._push_body_name = push_body_name
         self._model_file = scene_context.model_source
         self._sim_dt = float(sim_dt)
         self._iterations = None if iterations is None else int(iterations)
         self._post_step_forward_sensor = bool(post_step_forward_sensor)
+        self._geom_overrides = geom_overrides
         self._position_actuator_gains = (
             None if position_actuator_gains is None else dict(position_actuator_gains)
         )
@@ -323,8 +344,10 @@ class MuJoCoBackend(SimBackend):
         # State indices.
         self.nq = self._model.nq
         self.nv = self._model.nv
+        self.na = self._model.na
         self._idx_qpos = 1
         self._idx_qvel = 1 + self.nq
+        self._idx_act = self._idx_qvel + self.nv
         self._root_qpos_dim, self._root_qvel_dim = _root_state_dims(self._model)
         self._num_dof_pos = self.nq - self._root_qpos_dim
         self._num_dof_vel = self.nv - self._root_qvel_dim
@@ -344,6 +367,8 @@ class MuJoCoBackend(SimBackend):
             :, self._idx_qvel + self._root_qvel_dim : self._idx_qvel + self.nv
         ]
         self._qpos_view = self._physics_state[:, self._idx_qpos : self._idx_qpos + self.nq]
+        self._qvel_view = self._physics_state[:, self._idx_qvel : self._idx_qvel + self.nv]
+        self._act_view = self._physics_state[:, self._idx_act : self._idx_act + self.na]
         if self._root_qpos_dim == 7:
             self._base_pos_view = self._physics_state[:, self._idx_qpos : self._idx_qpos + 3]
             self._base_quat_view = self._physics_state[:, self._idx_qpos + 3 : self._idx_qpos + 7]
@@ -376,6 +401,17 @@ class MuJoCoBackend(SimBackend):
                 self._sensor_indices[name] = list(range(adr, adr + dim))
                 self._sensor_views[name] = self._sensor_data[:, adr : adr + dim]
 
+        self._actuator_names = tuple(
+            mujoco.mj_id2name(self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_id) or ""
+            for actuator_id in range(self._model.nu)
+        )
+        self._scratch_data = mujoco.MjData(self._model)
+        self._scratch_com_velocity_xy = np.zeros((self._num_envs, 2), dtype=self._np_dtype)
+        self._actuator_length_view = self._build_actuator_sensor_view("actuator_length")
+        self._actuator_velocity_view = self._build_actuator_sensor_view("actuator_velocity")
+        self._actuator_force_view = self._build_actuator_sensor_view("actuator_force")
+        self._subtree_com_view = self._build_optional_sensor_view("unilab_subtree_com", 3)
+
         # Zero-copy view mapping for tracked-body sensors.
         if self.add_body_sensors and self._valid_bnames:
 
@@ -404,8 +440,14 @@ class MuJoCoBackend(SimBackend):
 
     def _load_base_model(self) -> mujoco.MjModel:
         if isinstance(self._model_file, mujoco.MjModel):
+            if self._geom_overrides:
+                raise ValueError("geom_overrides is not supported for precompiled MuJoCo models")
             if self.add_body_sensors:
                 raise ValueError("add_body_sensors is not supported for precompiled MuJoCo models")
+            if self.enable_actuator_sensors:
+                raise ValueError(
+                    "enable_actuator_sensors is not supported for precompiled MuJoCo models"
+                )
             self._tracked_body_ids = []
             self._valid_bnames = []
             model = self._model_file
@@ -431,11 +473,22 @@ class MuJoCoBackend(SimBackend):
     def _prepare_model_xml(self) -> tuple[str, list[str], list[int], list[str]]:
         from unilab.base.backend.mujoco.xml import (
             create_discardvisual_xml,
+            inject_mujoco_actuator_sensors,
             inject_mujoco_tracking_sensors,
+            materialize_mujoco_geom_overrides_xml,
         )
 
         model_path = create_discardvisual_xml(str(self._model_file))
         tmp_paths = [model_path]
+        if self._geom_overrides:
+            model_path = materialize_mujoco_geom_overrides_xml(
+                model_path,
+                geom_overrides=self._geom_overrides,
+            )
+            tmp_paths.append(model_path)
+        if self.enable_actuator_sensors:
+            model_path = inject_mujoco_actuator_sensors(model_path)
+            tmp_paths.append(model_path)
         if self.add_body_sensors:
             model_path, tracked_body_ids, valid_bnames = inject_mujoco_tracking_sensors(
                 model_path,
@@ -446,6 +499,48 @@ class MuJoCoBackend(SimBackend):
             tracked_body_ids = []
             valid_bnames = []
         return model_path, tmp_paths, tracked_body_ids, valid_bnames
+
+    def _build_optional_sensor_view(self, name: str, dim: int) -> np.ndarray | None:
+        view = self._sensor_views.get(name)
+        if view is None:
+            return None
+        if view.shape[1] != dim:
+            raise ValueError(f"MuJoCo sensor '{name}' must have dimension {dim}")
+        return view
+
+    def _build_actuator_sensor_view(self, prefix: str) -> np.ndarray | None:
+        if not self.enable_actuator_sensors:
+            return None
+        sensor_names = [f"{prefix}_{name}" for name in self._actuator_names]
+        if any(not name for name in self._actuator_names):
+            raise ValueError("Actuator sensors require all MuJoCo actuators to be named")
+        missing = [name for name in sensor_names if name not in self._sensor_views]
+        if missing:
+            raise ValueError(f"Missing MuJoCo actuator sensors: {', '.join(missing[:8])}")
+        adrs = [
+            int(
+                self._model.sensor_adr[
+                    mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, name)
+                ]
+            )
+            for name in sensor_names
+        ]
+        dims = [
+            int(
+                self._model.sensor_dim[
+                    mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, name)
+                ]
+            )
+            for name in sensor_names
+        ]
+        if not adrs:
+            return np.empty((self._num_envs, 0), dtype=self._np_dtype)
+        if any(dim != 1 for dim in dims):
+            raise ValueError(f"{prefix} sensors must be scalar per actuator")
+        expected = list(range(adrs[0], adrs[0] + len(adrs)))
+        if adrs != expected:
+            raise ValueError(f"{prefix} sensors must be contiguous in MuJoCo sensordata")
+        return self._sensor_data[:, adrs[0] : adrs[-1] + 1]
 
     def _configure_model(self, model: mujoco.MjModel) -> None:
         model.opt.timestep = self._sim_dt
@@ -513,10 +608,12 @@ class MuJoCoBackend(SimBackend):
             mjb_paths = _compile_model_variant_chunk_to_mjb(
                 model_file=self._model_file,
                 add_body_sensors=self.add_body_sensors,
+                enable_actuator_sensors=self.enable_actuator_sensors,
                 base_name=self._base_name,
                 sim_dt=self._sim_dt,
                 iterations=self._iterations,
                 position_actuator_gains=self._position_actuator_gains,
+                geom_overrides=self._geom_overrides,
                 variants=variants,
             )
             return _load_compiled_models_and_cleanup(mjb_paths)
@@ -536,10 +633,12 @@ class MuJoCoBackend(SimBackend):
                         _compile_model_variant_chunk_to_mjb,
                         model_file=self._model_file,
                         add_body_sensors=self.add_body_sensors,
+                        enable_actuator_sensors=self.enable_actuator_sensors,
                         base_name=self._base_name,
                         sim_dt=self._sim_dt,
                         iterations=self._iterations,
                         position_actuator_gains=self._position_actuator_gains,
+                        geom_overrides=self._geom_overrides,
                         variants=chunk,
                     )
                     for chunk in chunks
@@ -550,10 +649,12 @@ class MuJoCoBackend(SimBackend):
                 _compile_model_variant_chunk_to_mjb(
                     model_file=self._model_file,
                     add_body_sensors=self.add_body_sensors,
+                    enable_actuator_sensors=self.enable_actuator_sensors,
                     base_name=self._base_name,
                     sim_dt=self._sim_dt,
                     iterations=self._iterations,
                     position_actuator_gains=self._position_actuator_gains,
+                    geom_overrides=self._geom_overrides,
                     variants=chunk,
                 )
                 for chunk in chunks
@@ -636,17 +737,55 @@ class MuJoCoBackend(SimBackend):
     def get_actuator_ctrl_range(self) -> np.ndarray:
         return np.array(self._model.actuator_ctrlrange, dtype=self._np_dtype)
 
+    def get_actuator_names(self) -> tuple[str, ...]:
+        return self._actuator_names
+
+    def _require_actuator_sensor_view(self, view: np.ndarray | None, label: str) -> np.ndarray:
+        if view is None:
+            raise NotImplementedError(
+                f"MuJoCo actuator {label} sensors are not enabled for this backend"
+            )
+        return view
+
+    def get_actuator_lengths(self) -> np.ndarray:
+        return self._require_actuator_sensor_view(self._actuator_length_view, "length")
+
+    def get_actuator_velocities(self) -> np.ndarray:
+        return self._require_actuator_sensor_view(self._actuator_velocity_view, "velocity")
+
+    def get_actuator_forces(self) -> np.ndarray:
+        return self._require_actuator_sensor_view(self._actuator_force_view, "force")
+
+    def get_actuator_activations(self) -> np.ndarray:
+        return self._act_view
+
     def get_keyframe_qpos(self, name: str) -> np.ndarray:
         key_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_KEY, name)
         if key_id < 0:
             raise ValueError(f"Keyframe '{name}' not found in MuJoCo model")
         return np.array(self._model.key_qpos[key_id].copy(), dtype=self._np_dtype)
 
+    def get_keyframe_qpos_by_index(self, index: int) -> np.ndarray:
+        if index < 0 or index >= self._model.nkey:
+            raise ValueError(f"Keyframe index {index} not found in MuJoCo model")
+        return np.array(self._model.key_qpos[int(index)].copy(), dtype=self._np_dtype)
+
+    def get_keyframe_qvel_by_index(self, index: int) -> np.ndarray:
+        if index < 0 or index >= self._model.nkey:
+            raise ValueError(f"Keyframe index {index} not found in MuJoCo model")
+        return np.array(self._model.key_qvel[int(index)].copy(), dtype=self._np_dtype)
+
     def get_default_qpos(self) -> np.ndarray:
         return np.asarray(self._model.qpos0, dtype=np.float64).copy()
 
     def get_init_qvel(self) -> np.ndarray:
         return np.zeros((self.nv,), dtype=self._np_dtype)
+
+    def get_qpos(self) -> np.ndarray:
+        return self._qpos_view
+
+    def get_qvel(self) -> np.ndarray:
+        return self._qvel_view
 
     def get_body_ids(self, names: "Sequence[str]") -> np.ndarray:
         ids: list[int] = []
@@ -723,6 +862,33 @@ class MuJoCoBackend(SimBackend):
 
     def get_body_mass(self) -> np.ndarray:
         return np.asarray(self._model.body_mass, dtype=np.float64).copy()
+
+    def get_com_position(self) -> np.ndarray:
+        if self._subtree_com_view is not None:
+            return self._subtree_com_view
+        return super().get_com_position()
+
+    def get_com_velocity_xy(self) -> np.ndarray:
+        body_mass = np.expand_dims(np.asarray(self._model.body_mass, dtype=np.float64), axis=-1)
+        total_mass = float(np.sum(body_mass))
+        if total_mass <= 0.0:
+            raise ValueError("body mass total must be positive to compute COM velocity")
+        for env_id in range(self._num_envs):
+            self._copy_physics_state_to_scratch(env_id)
+            mujoco.mj_forward(self._model, self._scratch_data)
+            cvel = -np.asarray(self._scratch_data.cvel, dtype=np.float64)
+            self._scratch_com_velocity_xy[env_id] = (np.sum(body_mass * cvel, axis=0) / total_mass)[
+                3:5
+            ]
+        return self._scratch_com_velocity_xy
+
+    def _copy_physics_state_to_scratch(self, env_id: int) -> None:
+        row = self._physics_state[int(env_id)]
+        self._scratch_data.time = float(row[0])
+        self._scratch_data.qpos[:] = row[self._idx_qpos : self._idx_qpos + self.nq]
+        self._scratch_data.qvel[:] = row[self._idx_qvel : self._idx_qvel + self.nv]
+        if self._model.na:
+            self._scratch_data.act[:] = row[self._idx_act : self._idx_act + self.na]
 
     def get_body_ipos(self) -> np.ndarray:
         return np.asarray(self._model.body_ipos, dtype=np.float64).copy()

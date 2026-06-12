@@ -351,6 +351,15 @@ def test_mujoco_post_step_forward_sensor_can_be_overridden():
     assert override_cfg.env.post_step_forward_sensor is False
 
 
+def test_ppo_myoleg_walk_flat_uses_myosuite_faithful_timing():
+    cfg = _compose("ppo", overrides=["task=myoleg_walk_flat/mujoco"])
+
+    assert cfg.env.sim_dt == pytest.approx(0.001)
+    assert cfg.env.ctrl_dt == pytest.approx(0.01)
+    assert round(cfg.env.ctrl_dt / cfg.env.sim_dt) == 10
+    assert cfg.env.post_step_forward_sensor is True
+
+
 def test_appo_adaptive_lr_factors_are_overridden_only_by_dex_hand_owners():
     g1_cfg = _compose("appo", overrides=["task=g1_walk_flat/mujoco"])
     allegro_cfg = _compose("appo", overrides=["task=allegro_inhand/mujoco"])
@@ -468,6 +477,36 @@ def test_ppo_go2w_rough_mujoco_uses_terrain_generator():
     assert cfg.reward.scales.joint_mirror == pytest.approx(-0.05)
     assert cfg.reward.only_positive_rewards is False
     assert cfg.algo.max_iterations == 1200
+
+
+def test_ppo_myoleg_walk_flat_mujoco_is_faithful_migration_anchor():
+    cfg = _compose("ppo", overrides=["task=myoleg_walk_flat/mujoco"])
+
+    assert cfg.training.task_name == "MyoLegWalkFlat"
+    assert cfg.training.sim_backend == "mujoco"
+    assert cfg.env.reset_type == "init"
+    assert cfg.env.min_height == pytest.approx(0.8)
+    assert cfg.env.max_rot == pytest.approx(0.8)
+    assert cfg.env.hip_period == 100
+    assert cfg.env.target_x_vel == pytest.approx(0.0)
+    assert cfg.env.target_y_vel == pytest.approx(1.2)
+    assert cfg.env.normalize_act is True
+    assert cfg.algo.obs_groups.actor == ["actor"]
+    assert cfg.algo.obs_groups.critic == ["critic"]
+    assert str(cfg.env.scene.model_file).endswith("src/unilab/assets/robots/myoleg/leg/myolegs.xml")
+    assert cfg.env.init_keyframe_index == 2
+    assert cfg.env.pelvis_body_name == "pelvis"
+    assert cfg.env.foot_body_names == ["talus_l", "talus_r"]
+    assert cfg.env.cyclic_hip_joint_names == ["hip_flexion_l", "hip_flexion_r"]
+    assert cfg.env.joint_angle_rew_joint_names == [
+        "hip_adduction_l",
+        "hip_adduction_r",
+        "hip_rotation_l",
+        "hip_rotation_r",
+    ]
+    assert cfg.reward.scales.vel_reward == pytest.approx(5.0)
+    assert cfg.reward.scales.done == pytest.approx(-100.0)
+    assert cfg.reward.scales.cyclic_hip == pytest.approx(-10.0)
 
 
 def test_ppo_go2w_rough_motrix_uses_yaw_reset_and_strong_control():

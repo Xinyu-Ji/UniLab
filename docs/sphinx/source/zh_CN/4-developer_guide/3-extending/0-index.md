@@ -42,6 +42,12 @@
 把 `myoLegWalk-v0` 拆成可迁移的动作、观测、奖励与终止方案。
 :::
 
+:::{grid-item-card} MyoSuite Walk 实施记录
+:link: 7-myosuite_walk_phase_report
+:link-type: doc
+记录 MyoLeg MVP 当前改动、验证结果、坐标系结论和剩余风险。
+:::
+
 ::::
 
 ```{toctree}
@@ -53,4 +59,5 @@
 4-new_terrain
 5-task_mdp_and_frames
 6-myosuite_walk_mdp
+7-myosuite_walk_phase_report
 ```

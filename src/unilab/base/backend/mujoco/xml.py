@@ -4,7 +4,7 @@ import os
 import shutil
 import tempfile
 import xml.etree.ElementTree as ET
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast, overload
 
@@ -64,6 +64,12 @@ def _get_named_bodies(model_file: str) -> tuple[list[int], list[str]]:
     return ids, names
 
 
+def get_root_body_name(model_file: str) -> str | None:
+    """Return the first named body in MuJoCo body-id order, excluding world."""
+    _, names = _get_named_bodies(model_file)
+    return names[0] if names else None
+
+
 def get_named_body_ids(model_file: str, names: Sequence[str]) -> list[int]:
     """Resolve MuJoCo-style body ids from XML without importing mujoco."""
     body_ids, body_names = _get_named_bodies(model_file)
@@ -85,12 +91,8 @@ def _materialize_spec_xml(spec, model_file: str) -> str:
     fd, output_path = tempfile.mkstemp(
         suffix=".xml", dir=os.path.dirname(os.path.abspath(model_file))
     )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(spec.to_xml())
-    except Exception:
-        os.close(fd)
-        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(spec.to_xml())
     return output_path
 
 
@@ -166,6 +168,145 @@ def _add_b_sensors(spec, valid_bnames: list[str], baselink_name: str) -> None:
         )
 
 
+def _add_actuator_sensors(spec, actuator_names: Sequence[str]) -> None:
+    mujoco = _mujoco_module()
+    for actuator_name in actuator_names:
+        spec.add_sensor(
+            name=f"actuator_length_{actuator_name}",
+            type=mujoco.mjtSensor.mjSENS_ACTUATORPOS,
+            objtype=mujoco.mjtObj.mjOBJ_ACTUATOR,
+            objname=actuator_name,
+        )
+    for actuator_name in actuator_names:
+        spec.add_sensor(
+            name=f"actuator_velocity_{actuator_name}",
+            type=mujoco.mjtSensor.mjSENS_ACTUATORVEL,
+            objtype=mujoco.mjtObj.mjOBJ_ACTUATOR,
+            objname=actuator_name,
+        )
+    for actuator_name in actuator_names:
+        spec.add_sensor(
+            name=f"actuator_force_{actuator_name}",
+            type=mujoco.mjtSensor.mjSENS_ACTUATORFRC,
+            objtype=mujoco.mjtObj.mjOBJ_ACTUATOR,
+            objname=actuator_name,
+        )
+
+
+def _sensor_tag(root: ET.Element) -> ET.Element:
+    sensor_tag = root.find("sensor")
+    if sensor_tag is None:
+        sensor_tag = ET.Element("sensor")
+        root.append(sensor_tag)
+    return sensor_tag
+
+
+def _append_frame_sensor_xml(
+    sensor_tag: ET.Element,
+    *,
+    name: str,
+    sensor_type: str,
+    objname: str,
+    refname: str | None = None,
+) -> None:
+    attrs = {
+        "name": name,
+        "objtype": "xbody",
+        "objname": objname,
+    }
+    if refname is not None:
+        attrs["reftype"] = "xbody"
+        attrs["refname"] = refname
+    ET.SubElement(sensor_tag, sensor_type, attrs)
+
+
+def _append_body_tracking_sensors_xml(
+    root: ET.Element,
+    valid_bnames: Sequence[str],
+    *,
+    baselink_name: str | None,
+) -> None:
+    sensor_tag = _sensor_tag(root)
+    for prefix, sensor_type in (
+        ("track_pos_w", "framepos"),
+        ("track_quat_w", "framequat"),
+        ("track_linvel_w", "framelinvel"),
+        ("track_angvel_w", "frameangvel"),
+    ):
+        for bname in valid_bnames:
+            _append_frame_sensor_xml(
+                sensor_tag,
+                name=f"{prefix}_{bname}",
+                sensor_type=sensor_type,
+                objname=bname,
+            )
+    if baselink_name and baselink_name in valid_bnames:
+        for prefix, sensor_type in (
+            ("track_pos_b", "framepos"),
+            ("track_quat_b", "framequat"),
+            ("track_linvel_b", "framelinvel"),
+            ("track_angvel_b", "frameangvel"),
+        ):
+            for bname in valid_bnames:
+                _append_frame_sensor_xml(
+                    sensor_tag,
+                    name=f"{prefix}_{bname}",
+                    sensor_type=sensor_type,
+                    objname=bname,
+                    refname=baselink_name,
+                )
+
+
+def _append_actuator_sensors_xml(root: ET.Element, actuator_names: Sequence[str]) -> None:
+    sensor_tag = _sensor_tag(root)
+    for prefix, tag in (
+        ("actuator_length", "actuatorpos"),
+        ("actuator_velocity", "actuatorvel"),
+        ("actuator_force", "actuatorfrc"),
+    ):
+        for actuator_name in actuator_names:
+            ET.SubElement(
+                sensor_tag,
+                tag,
+                {
+                    "name": f"{prefix}_{actuator_name}",
+                    "actuator": actuator_name,
+                },
+            )
+
+
+def _append_subtree_com_sensor_xml(root: ET.Element, root_body_name: str | None) -> None:
+    if not root_body_name:
+        return
+    sensor_tag = _sensor_tag(root)
+    ET.SubElement(
+        sensor_tag,
+        "subtreecom",
+        {
+            "name": "unilab_subtree_com",
+            "body": root_body_name,
+        },
+    )
+
+
+def _write_sensor_injected_xml(
+    model_file: str,
+    *,
+    valid_bnames: Sequence[str] = (),
+    baselink_name: str | None = None,
+    actuator_names: Sequence[str] = (),
+    subtree_com_body_name: str | None = None,
+) -> str:
+    tree = ET.parse(model_file)
+    root = tree.getroot()
+    _append_subtree_com_sensor_xml(root, subtree_com_body_name)
+    if valid_bnames:
+        _append_body_tracking_sensors_xml(root, valid_bnames, baselink_name=baselink_name)
+    if actuator_names:
+        _append_actuator_sensors_xml(root, actuator_names)
+    return _write_temp_xml(tree, model_file)
+
+
 def _write_temp_xml(tree: ET.ElementTree[ET.Element], model_file: str) -> str:  # type: ignore[type-arg]
     fd, output_path = tempfile.mkstemp(
         suffix=".xml", dir=os.path.dirname(os.path.abspath(model_file))
@@ -177,6 +318,40 @@ def _write_temp_xml(tree: ET.ElementTree[ET.Element], model_file: str) -> str:  
 
 def _format_values(values: list[float] | tuple[float, ...]) -> str:
     return " ".join(str(float(value)) for value in values)
+
+
+def materialize_mujoco_geom_overrides_xml(
+    model_file: str,
+    *,
+    geom_overrides: Mapping[str, Mapping[str, Any]],
+) -> str:
+    """Create a temporary XML with cold-path MuJoCo geom overrides applied."""
+    tree = ET.parse(model_file)
+    root = tree.getroot()
+    for geom_name, override in geom_overrides.items():
+        geom = root.find(f".//geom[@name='{geom_name}']")
+        if geom is None:
+            if not bool(override.get("required", True)):
+                continue
+            raise ValueError(f"Geom '{geom_name}' not found in MuJoCo model '{model_file}'")
+
+        pos = override.get("pos")
+        if pos is not None:
+            pos_values = tuple(float(value) for value in pos)
+            if len(pos_values) != 3:
+                raise ValueError(f"Geom '{geom_name}' pos override must have length 3")
+            geom.set("pos", _format_values(pos_values))
+
+        rgba_alpha = override.get("rgba_alpha")
+        if rgba_alpha is not None:
+            rgba = geom.get("rgba", "1 1 1 1").split()
+            rgba_values = [float(value) for value in rgba]
+            if len(rgba_values) != 4:
+                raise ValueError(f"Geom '{geom_name}' rgba must have length 4")
+            rgba_values[3] = float(rgba_alpha)
+            geom.set("rgba", _format_values(tuple(rgba_values)))
+
+    return _write_temp_xml(tree, model_file)
 
 
 def materialize_scene_visual_override(
@@ -531,15 +706,38 @@ def inject_mujoco_tracking_sensors(
     Returns:
         (tmp_xml_path, tracked_body_ids, valid_bnames)
     """
-    mujoco = _mujoco_module()
     tracked_body_ids, valid_bnames = _get_named_bodies(model_file)
 
-    spec = mujoco.MjSpec.from_file(model_file)
-    _add_w_sensors(spec, valid_bnames)
-    if baselink_name and baselink_name in valid_bnames:
-        _add_b_sensors(spec, valid_bnames, baselink_name)
+    return (
+        _write_sensor_injected_xml(
+            model_file,
+            valid_bnames=valid_bnames,
+            baselink_name=baselink_name,
+            subtree_com_body_name=valid_bnames[0] if valid_bnames else None,
+        ),
+        tracked_body_ids,
+        valid_bnames,
+    )
 
-    return _materialize_spec_xml(spec, model_file), tracked_body_ids, valid_bnames
+
+def inject_mujoco_actuator_sensors(model_file: str) -> str:
+    """Inject per-actuator length, velocity, and force sensors on the cold path."""
+    mujoco = _mujoco_module()
+    model = mujoco.MjModel.from_xml_path(model_file)
+    actuator_names = [
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator_id)
+        for actuator_id in range(model.nu)
+    ]
+    missing = [str(idx) for idx, name in enumerate(actuator_names) if not name]
+    if missing:
+        raise ValueError(
+            "Actuator sensors require all actuators to be named; missing names for ids: "
+            + ", ".join(missing)
+        )
+
+    return _write_sensor_injected_xml(
+        model_file, actuator_names=tuple(str(name) for name in actuator_names)
+    )
 
 
 def processed_xml(xml_path):

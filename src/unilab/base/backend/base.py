@@ -98,6 +98,26 @@ class SimBackend(abc.ABC):
             Array with shape ``(num_actuators, 2)`` and columns ``[low, high]``.
         """
 
+    def get_actuator_names(self) -> tuple[str, ...]:
+        """Return backend actuator names in backend actuator-id order."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose actuator names")
+
+    def get_actuator_lengths(self) -> np.ndarray:
+        """Return actuator/muscle path lengths with shape ``(num_envs, num_actuators)``."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose actuator lengths")
+
+    def get_actuator_velocities(self) -> np.ndarray:
+        """Return actuator/muscle path velocities with shape ``(num_envs, num_actuators)``."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose actuator velocities")
+
+    def get_actuator_forces(self) -> np.ndarray:
+        """Return actuator/muscle forces with shape ``(num_envs, num_actuators)``."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose actuator forces")
+
+    def get_actuator_activations(self) -> np.ndarray:
+        """Return actuator activation states with shape ``(num_envs, na)``."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose actuator activations")
+
     @abc.abstractmethod
     def get_keyframe_qpos(self, name: str) -> np.ndarray:
         """Return the full qpos for a named keyframe, including the floating base.
@@ -113,6 +133,14 @@ class SimBackend(abc.ABC):
         """Return the backend/model default qpos through a stable contract."""
         raise NotImplementedError(f"{self.__class__.__name__} does not expose default qpos")
 
+    def get_keyframe_qpos_by_index(self, index: int) -> np.ndarray:
+        """Return qpos for a keyframe index in backend/model order."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose indexed keyframes")
+
+    def get_keyframe_qvel_by_index(self, index: int) -> np.ndarray:
+        """Return qvel for a keyframe index in backend/model order."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose indexed keyframes")
+
     @abc.abstractmethod
     def get_init_qvel(self) -> np.ndarray:
         """Return a zero-initialized qvel vector compatible with ``set_state``.
@@ -120,6 +148,14 @@ class SimBackend(abc.ABC):
         Returns:
             Zero-filled qvel array.
         """
+
+    def get_qpos(self) -> np.ndarray:
+        """Return full generalized positions with shape ``(num_envs, nq)``."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose full qpos")
+
+    def get_qvel(self) -> np.ndarray:
+        """Return full generalized velocities with shape ``(num_envs, nv)``."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not expose full qvel")
 
     @abc.abstractmethod
     def get_body_ids(self, names: Sequence[str]) -> np.ndarray:
@@ -191,6 +227,16 @@ class SimBackend(abc.ABC):
     def get_body_mass(self) -> np.ndarray:
         """Return the backend body-mass table."""
         raise NotImplementedError(f"{self.__class__.__name__} does not expose body mass")
+
+    def get_com_position(self) -> np.ndarray:
+        """Return mass-weighted center-of-mass position in world coordinates."""
+        body_mass = np.asarray(self.get_body_mass(), dtype=np.float64)
+        body_ids = np.arange(body_mass.shape[0], dtype=np.int32)
+        body_pos = np.asarray(self.get_body_pos_w(body_ids), dtype=np.float64)
+        total_mass = np.sum(body_mass)
+        if total_mass <= 0.0:
+            raise ValueError("body mass total must be positive to compute COM position")
+        return np.sum(body_pos * body_mass[None, :, None], axis=1) / total_mass
 
     def get_body_ipos(self) -> np.ndarray:
         """Return the backend body inertial-position table."""
@@ -533,6 +579,17 @@ class SimBackend(abc.ABC):
     def get_body_vel_w(self, body_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Return selected body linear and angular velocities in the world frame."""
         return self.get_body_lin_vel_w(body_ids), self.get_body_ang_vel_w(body_ids)
+
+    def get_com_velocity_xy(self) -> np.ndarray:
+        """Return mass-weighted center-of-mass velocity in the MuJoCo world x/y axes."""
+        body_mass = np.asarray(self.get_body_mass(), dtype=np.float64)
+        body_ids = np.arange(body_mass.shape[0], dtype=np.int32)
+        body_lin_vel = np.asarray(self.get_body_lin_vel_w(body_ids), dtype=np.float64)
+        total_mass = np.sum(body_mass)
+        if total_mass <= 0.0:
+            raise ValueError("body mass total must be positive to compute COM velocity")
+        com_vel = np.sum(body_lin_vel * body_mass[None, :, None], axis=1) / total_mass
+        return com_vel[:, :2]
 
     @abc.abstractmethod
     def get_body_ang_vel_w(self, body_ids: np.ndarray) -> np.ndarray:

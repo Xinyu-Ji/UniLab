@@ -12,6 +12,7 @@ from unilab.base.backend import (
     inject_mujoco_tracking_sensors,
     materialize_motrix_hfield_attached_scene,
     materialize_motrix_scene,
+    materialize_mujoco_geom_overrides_xml,
     materialize_mujoco_hfield_attached_scene,
     materialize_scene_fragments,
 )
@@ -166,6 +167,32 @@ def test_materialize_scene_fragments_merges_static_scene_fragment(tmp_path) -> N
     try:
         model = mujoco.MjModel.from_xml_path(tmp_xml)
         assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "foot_contact") >= 0
+    finally:
+        os.remove(tmp_xml)
+
+
+def test_materialize_mujoco_geom_overrides_moves_and_hides_named_geom(tmp_path) -> None:
+    scene = tmp_path / "scene.xml"
+    scene.write_text(
+        """
+        <mujoco>
+          <worldbody>
+            <geom name="terrain" type="plane" pos="0 0 -0.005" rgba="1 1 1 1"/>
+          </worldbody>
+        </mujoco>
+        """,
+        encoding="utf-8",
+    )
+
+    tmp_xml = materialize_mujoco_geom_overrides_xml(
+        str(scene),
+        geom_overrides={"terrain": {"pos": (0.0, 0.0, -10.0), "rgba_alpha": 0.0}},
+    )
+    try:
+        terrain = ET.parse(tmp_xml).getroot().find(".//geom[@name='terrain']")
+        assert terrain is not None
+        assert terrain.get("pos") == "0.0 0.0 -10.0"
+        assert terrain.get("rgba") == "1.0 1.0 1.0 0.0"
     finally:
         os.remove(tmp_xml)
 

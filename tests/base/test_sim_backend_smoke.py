@@ -14,6 +14,7 @@ import pytest
 from unilab.assets import ASSETS_ROOT_PATH
 from unilab.base.backend.mujoco.xml import get_named_body_ids
 from unilab.base.scene import SceneCfg
+from unilab.dr import GeomSizeOverride, InitRandomizationPlan, ModelVariantSpec
 from unilab.dr.types import ResetRandomizationPayload
 
 pytest.importorskip("mujoco", reason="mujoco not installed")
@@ -122,11 +123,84 @@ def test_mujoco_backend_fixed_base_dof_views_do_not_skip_first_joint():
     assert int(bkd.model.jnt_type[0]) != int(mujoco.mjtJoint.mjJNT_FREE)
     _shape(bkd.get_dof_pos(), NUM_ENVS, bkd.model.nq)
     _shape(bkd.get_dof_vel(), NUM_ENVS, bkd.model.nv)
+    _shape(bkd.get_qvel(), NUM_ENVS, bkd.model.nv)
+    assert bkd.get_qvel() is not bkd.get_dof_vel()
+    np.testing.assert_allclose(bkd.get_qvel(), bkd.get_dof_vel())
     _shape(bkd.get_base_pos(), NUM_ENVS, 3)
     _shape(bkd.get_base_quat(), NUM_ENVS, 4)
     np.testing.assert_allclose(bkd.get_base_lin_vel(), 0.0, atol=1e-8)
     np.testing.assert_allclose(bkd.get_base_ang_vel(), 0.0, atol=1e-8)
     _unit_quat(bkd.get_base_quat(), "MuJoCo fixed-base smoke")
+
+
+def test_mujoco_backend_optional_actuator_sensors_expose_live_views():
+    from unilab.base.backend.mujoco.backend import MuJoCoBackend
+
+    bkd = MuJoCoBackend(
+        SceneCfg(model_file=_xml("go2")),
+        NUM_ENVS,
+        SIM_DT,
+        base_name="base",
+        enable_actuator_sensors=True,
+    )
+    bkd.materialize()
+
+    assert len(bkd.get_actuator_names()) == bkd.num_actuators
+    _shape(bkd.get_actuator_lengths(), NUM_ENVS, bkd.num_actuators)
+    _shape(bkd.get_actuator_velocities(), NUM_ENVS, bkd.num_actuators)
+    _shape(bkd.get_actuator_forces(), NUM_ENVS, bkd.num_actuators)
+    _shape(bkd.get_actuator_activations(), NUM_ENVS, bkd.model.na)
+
+    length_view = bkd.get_actuator_lengths()
+    assert np.shares_memory(length_view, bkd._sensor_data)
+    if bkd.model.na:
+        assert np.shares_memory(bkd.get_actuator_activations(), bkd._physics_state)
+    bkd.step(np.zeros((NUM_ENVS, bkd.num_actuators)), nsteps=1)
+    assert bkd.get_actuator_lengths() is length_view
+
+
+def test_mujoco_backend_model_variants_preserve_actuator_sensors():
+    from unilab.base.backend.mujoco.backend import MuJoCoBackend
+
+    bkd = MuJoCoBackend(
+        SceneCfg(model_file=_SHARPA["model_file"]),
+        NUM_ENVS,
+        SIM_DT,
+        base_name=_SHARPA["base_name"],
+        enable_actuator_sensors=True,
+    )
+    mujoco = _mujoco_module()
+    geom_id = mujoco.mj_name2id(bkd.model, mujoco.mjtObj.mjOBJ_GEOM, "object")
+    base_size = tuple(np.asarray(bkd.model.geom_size[geom_id], dtype=np.float64) * 0.9)
+
+    bkd.apply_init_randomization(
+        InitRandomizationPlan(
+            model_assignments=np.zeros((NUM_ENVS,), dtype=np.int32),
+            model_variants=(
+                ModelVariantSpec(geom_size_overrides=(GeomSizeOverride("object", base_size),)),
+            ),
+        )
+    )
+    bkd.materialize()
+
+    _shape(bkd.get_actuator_lengths(), NUM_ENVS, bkd.num_actuators)
+    _shape(bkd.get_actuator_velocities(), NUM_ENVS, bkd.num_actuators)
+    _shape(bkd.get_actuator_forces(), NUM_ENVS, bkd.num_actuators)
+
+
+def test_mujoco_backend_indexed_keyframe_contract_uses_model_order():
+    from unilab.base.backend.mujoco.backend import MuJoCoBackend
+
+    bkd = MuJoCoBackend(
+        SceneCfg(model_file=_xml("go2")),
+        NUM_ENVS,
+        SIM_DT,
+        base_name="base",
+    )
+    bkd.materialize()
+
+    np.testing.assert_allclose(bkd.get_keyframe_qpos_by_index(0), bkd.get_keyframe_qpos("home"))
+    assert bkd.get_keyframe_qvel_by_index(0).shape == (bkd.nv,)
 
 
 @pytest.mark.parametrize("robot", BASIC_ROBOTS)

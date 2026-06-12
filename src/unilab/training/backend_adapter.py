@@ -32,6 +32,7 @@ class BackendAdapter:
         """Build env_cfg_override from the resolved reward + env sections."""
         env_cfg_override = extract_reward_config(self.cfg)
         env_cfg_override.update(self._to_plain_dict(getattr(self.cfg, "env", None)))
+        self._resolve_task_scene_path(env_cfg_override)
 
         return env_cfg_override
 
@@ -75,6 +76,18 @@ class BackendAdapter:
 
     def _apply_env_profile(self, env_cfg_override: dict[str, Any], env_profile: Any) -> None:
         env_cfg_override.update(self._to_plain_dict(env_profile))
+
+    def _resolve_task_scene_path(self, env_cfg_override: dict[str, Any]) -> None:
+        scene = env_cfg_override.get("scene")
+        if isinstance(scene, SceneCfg):
+            if scene.model_file:
+                scene.model_file = self._resolve_root_relative_path(str(scene.model_file))
+            return
+        if not isinstance(scene, dict):
+            return
+        model_file = scene.get("model_file")
+        if model_file:
+            scene["model_file"] = self._resolve_root_relative_path(str(model_file))
 
     def _resolve_root_relative_path(self, path_value: str) -> str:
         candidate = Path(path_value)

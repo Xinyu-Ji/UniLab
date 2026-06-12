@@ -1,0 +1,52 @@
+# @package _global_
+training:
+  task_name: MyoLegWalkFlat
+  sim_backend: mujoco
+  play_steps: 1000
+  render_spacing: 0.5
+
+algo:
+  num_envs: 1024
+  num_steps_per_env: 24
+  max_iterations: 151
+  empirical_normalization: true
+  obs_groups:
+    actor:
+      - actor
+    critic:
+      - critic
+
+reward:
+  scales:
+    vel_reward: 5.0
+    done: -100.0
+    cyclic_hip: -10.0
+    ref_rot: 10.0
+    joint_angle_rew: 5.0
+
+env:
+  scene:
+    model_file: src/unilab/assets/robots/myoleg/leg/myolegs.xml
+  max_episode_seconds: 10.0
+  sim_dt: 0.001
+  ctrl_dt: 0.01
+  post_step_forward_sensor: true
+  min_height: 0.8
+  max_rot: 0.8
+  hip_period: 100
+  reset_type: init
+  target_x_vel: 0.0
+  target_y_vel: 1.2
+  target_rot: null
+  normalize_act: true
+  init_keyframe_index: 2
+  init_keyframe_name: init
+  torso_body_name: torso
+  pelvis_body_name: pelvis
+  foot_body_names: [talus_l, talus_r]
+  cyclic_hip_joint_names: [hip_flexion_l, hip_flexion_r]
+  joint_angle_rew_joint_names:
+    - hip_adduction_l
+    - hip_adduction_r
+    - hip_rotation_l
+    - hip_rotation_r
