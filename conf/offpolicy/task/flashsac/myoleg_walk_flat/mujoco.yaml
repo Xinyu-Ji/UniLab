@@ -2,19 +2,33 @@
 training:
   task_name: MyoLegWalkFlat
   sim_backend: mujoco
-  play_steps: 1000
-  render_spacing: 0.5
+  no_play: true
+  export_onnx: false
+  logger: tensorboard
+  verbose_metrics: true
+  log_root: logs/myoleg_flashsac_2048_analysis_gpu1
 
 algo:
-  num_envs: 1024
-  num_steps_per_env: 24
-  max_iterations: 151
-  empirical_normalization: true
-  obs_groups:
-    actor:
-      - actor
-    critic:
-      - critic
+  num_envs: 2048
+  batch_size: 4096
+  replay_buffer_n: 512
+  learning_starts: 98
+  max_iterations: 5000
+  save_interval: 500
+  updates_per_step: 2
+  policy_frequency: 2
+  tau: 0.01
+  actor_hidden_dim: 128
+  critic_hidden_dim: 256
+  obs_normalization: false
+  use_layer_norm: false
+  algo_params:
+    normalize_reward: true
+    use_compile: true
+    actor_num_blocks: 2
+    critic_num_blocks: 2
+    temp_initial_value: 0.01
+    temp_target_sigma: 0.15
 
 reward:
   scales:
@@ -36,7 +50,7 @@ env:
   min_height: 0.8
   max_rot: 0.8
   hip_period: 100
-  reset_type: init
+  reset_type: random
   target_x_vel: 0.0
   target_y_vel: 1.2
   target_rot: null

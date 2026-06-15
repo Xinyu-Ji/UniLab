@@ -103,6 +103,16 @@ class OffPolicyRunner(AsyncRunner):
             self.learning_starts,
             num_envs,
         )
+        replay_capacity = int(self.replay_buffer_n) * int(num_envs)
+        if self.train_start_threshold > replay_capacity:
+            raise ValueError(
+                "Off-policy replay buffer capacity is smaller than the training start "
+                "threshold: "
+                f"replay_buffer_n * num_envs = {self.replay_buffer_n} * {num_envs} "
+                f"= {replay_capacity}, but max(batch_size, learning_starts * num_envs) "
+                f"= {self.train_start_threshold}. Increase algo.replay_buffer_n, "
+                "decrease algo.learning_starts, or decrease algo.batch_size."
+            )
         self.updates_per_step = updates_per_step
         self.policy_frequency = policy_frequency
         self.sync_collection = sync_collection

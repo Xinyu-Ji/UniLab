@@ -289,7 +289,10 @@ def test_offpolicy_myoleg_walk_flat_mujoco_sac_composes():
     assert cfg.env.reset_type == "random"
     assert cfg.env.sim_dt == pytest.approx(0.001)
     assert cfg.env.ctrl_dt == pytest.approx(0.01)
+    assert cfg.env.enable_diagnostics_log is True
     assert cfg.reward.scales.vel_reward == pytest.approx(5.0)
+    assert cfg.reward.scales.action_l2 == pytest.approx(0.0)
+    assert cfg.reward.scales.action_rate == pytest.approx(0.0)
 
 
 def test_ppo_g1_backend_specific_hyperparams_remain_separate():
@@ -376,6 +379,8 @@ def test_ppo_myoleg_walk_flat_uses_myosuite_faithful_timing():
     assert cfg.env.ctrl_dt == pytest.approx(0.01)
     assert round(cfg.env.ctrl_dt / cfg.env.sim_dt) == 10
     assert cfg.env.post_step_forward_sensor is True
+    assert cfg.env.enable_diagnostics_log is True
+    assert cfg.env.log_every_n_steps == 10
 
 
 def test_appo_adaptive_lr_factors_are_overridden_only_by_dex_hand_owners():
@@ -525,6 +530,10 @@ def test_ppo_myoleg_walk_flat_mujoco_is_faithful_migration_anchor():
     assert cfg.reward.scales.vel_reward == pytest.approx(5.0)
     assert cfg.reward.scales.done == pytest.approx(-100.0)
     assert cfg.reward.scales.cyclic_hip == pytest.approx(-10.0)
+    assert cfg.reward.scales.ref_rot == pytest.approx(10.0)
+    assert cfg.reward.scales.joint_angle_rew == pytest.approx(5.0)
+    assert cfg.reward.scales.action_l2 == pytest.approx(0.0)
+    assert cfg.reward.scales.action_rate == pytest.approx(0.0)
 
 
 def test_ppo_go2w_rough_motrix_uses_yaw_reset_and_strong_control():

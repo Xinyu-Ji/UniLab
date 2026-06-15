@@ -9,6 +9,7 @@ training:
 algo:
   num_envs: 1024
   learning_starts: 1000
+  replay_buffer_n: 2048
   max_iterations: 5000
   save_interval: 500
   updates_per_step: 4
@@ -27,6 +28,8 @@ reward:
     cyclic_hip: -10.0
     ref_rot: 10.0
     joint_angle_rew: 5.0
+    action_l2: 0.0
+    action_rate: 0.0
 
 env:
   scene:
@@ -43,6 +46,8 @@ env:
   target_y_vel: 1.2
   target_rot: null
   normalize_act: true
+  enable_diagnostics_log: true
+  log_every_n_steps: 10
   init_keyframe_index: 2
   init_keyframe_name: init
   torso_body_name: torso

@@ -11,6 +11,7 @@ import torch
 import unilab.algos.torch.offpolicy.double_buffer_runner as double_buffer_runner_module
 import unilab.algos.torch.offpolicy.multi_gpu_runner as multi_gpu_runner_module
 import unilab.algos.torch.offpolicy.runner as runner_module
+import unilab.algos.torch.offpolicy.worker as worker_module
 from unilab.algos.torch.offpolicy.runner import (
     OffPolicyRunner,
     compute_train_start_threshold,
@@ -290,6 +291,44 @@ def test_replay_buffer_ready_for_learning(
         )
         is expected
     )
+
+
+def test_offpolicy_worker_collects_env_diagnostics_by_prefix() -> None:
+    accepted = {
+        "reward/total",
+        "reward_raw/vel_reward",
+        "state/com_vel_y",
+        "action/raw_abs_mean",
+        "ctrl/mean",
+        "muscle/activation_mean",
+        "terminal/terminated_rate",
+    }
+    rejected = {"debug/foo", "timing/env_step_ms", "foo/reward/total", ""}
+
+    for key in accepted:
+        assert worker_module.should_collect_env_log_metric(key)
+    for key in rejected:
+        assert not worker_module.should_collect_env_log_metric(key)
+
+
+def test_offpolicy_runner_rejects_unreachable_train_start_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner_module, "get_env_dims", lambda *args, **kwargs: (4, 2, 0))
+
+    with pytest.raises(ValueError, match="replay buffer capacity is smaller"):
+        OffPolicyRunner(
+            learner=_FakeLearner(),
+            env_name="DummyEnv",
+            algo_type="sac",
+            num_envs=2,
+            replay_buffer_n=4,
+            batch_size=8,
+            learning_starts=6,
+            updates_per_step=1,
+            policy_frequency=1,
+            device="cpu",
+        )
 
 
 def _make_runner(

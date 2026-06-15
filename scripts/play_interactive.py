@@ -842,6 +842,18 @@ def _load_viewer_model(env: Any, *, use_env_visual_model: bool):
     return playback_model
 
 
+def _sync_viewer_ctrl_from_info(viz_data, info: dict[str, Any]) -> None:
+    ctrl = info.get("current_ctrl")
+    if not isinstance(ctrl, np.ndarray):
+        return
+    ctrl_arr = np.asarray(ctrl)
+    if ctrl_arr.ndim == 2:
+        ctrl_arr = ctrl_arr[0]
+    if ctrl_arr.shape != viz_data.ctrl.shape:
+        return
+    viz_data.ctrl[:] = ctrl_arr
+
+
 def _build_playback_config(args, *, num_envs: int = 1) -> RslRlPlaybackConfig:
     return RslRlPlaybackConfig(
         task=str(args.task),
@@ -1243,6 +1255,7 @@ def play_interactive(args, cfg: DictConfig | None = None, *, algo: str | None = 
                 # Push env state[0] into viz_data and refresh scene
                 phys = playback_session.physics_state()[0].astype(np.float64)
                 mujoco.mj_setState(mj_model, viz_data, phys, state_spec)
+                _sync_viewer_ctrl_from_info(viz_data, playback_session.info)
                 mujoco.mj_forward(mj_model, viz_data)
 
                 if has_cam and bool(getattr(args, "camera_follow_body", True)):

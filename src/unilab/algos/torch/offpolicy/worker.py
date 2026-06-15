@@ -28,6 +28,20 @@ COLLECTOR_TIMING_KEYS = (
     "replay_ms",
     "sync_coordination_ms",
 )
+COLLECTOR_ENV_LOG_PREFIXES = (
+    "reward/",
+    "reward_raw/",
+    "state/",
+    "action/",
+    "ctrl/",
+    "muscle/",
+    "terminal/",
+)
+
+
+def should_collect_env_log_metric(key: str) -> bool:
+    """Return whether an env info["log"] scalar should reach training logs."""
+    return key.startswith(COLLECTOR_ENV_LOG_PREFIXES)
 
 
 def resolve_collector_actor_dims(
@@ -642,11 +656,12 @@ def _run_collector(
         if now - _last_log_time > 2.0:
             _last_log_time = now
 
-        # Extract reward components from env info
+        # Extract scalar diagnostics from env info. Keep this prefix-based so
+        # arbitrary info payloads do not leak into backend logs.
         log_info = state.info.get("log", {})
         if log_info:
             for k, v in log_info.items():
-                if k.startswith("reward/"):
+                if should_collect_env_log_metric(k):
                     ep_reward_components[k].append(v)
 
         # Send metrics periodically

@@ -201,6 +201,9 @@ def test_myoleg_walk_flat_init_state_and_step_smoke(tmp_path: Path):
         assert not next_state.terminated[0]
         assert next_state.reward[0] == pytest.approx(5.0 * (1.0 + np.exp(-(1.2**2))) + 15.0)
         assert "phase_var" in next_state.info
+        assert "reward/total" in next_state.info["log"]
+        assert "state/com_vel_y" in next_state.info["log"]
+        assert "action/near_minus_one_frac" in next_state.info["log"]
     finally:
         env.close()
 
@@ -243,8 +246,109 @@ def test_myoleg_walk_flat_muscle_like_action_uses_myosuite_sigmoid(tmp_path: Pat
         )
         ctrl = env.apply_action(np.array([[0.5]], dtype=np.float32), state)
         np.testing.assert_allclose(ctrl, [[0.5]], atol=1e-6)
+        np.testing.assert_allclose(state.info["current_actions"], [[0.5]], atol=1e-6)
+        np.testing.assert_allclose(state.info["raw_policy_actions"], [[0.5]], atol=1e-6)
+        np.testing.assert_allclose(state.info["current_ctrl"], [[0.5]], atol=1e-6)
         ctrl = env.apply_action(np.array([[0.0]], dtype=np.float32), state)
         np.testing.assert_allclose(ctrl, [[1.0 / (1.0 + np.exp(2.5))]], atol=1e-6)
+    finally:
+        env.close()
+
+
+def test_myoleg_walk_flat_action_regularization_is_configurable(tmp_path: Path):
+    from unilab.base import registry
+    from unilab.base.np_env import NpEnvState
+
+    registry.ensure_registries()
+    model_file = _muscle_like_ctrl_model(tmp_path / "myoleg_action_regularization.xml")
+    env = registry.make(
+        "MyoLegWalkFlat",
+        sim_backend="mujoco",
+        env_cfg_override=_minimal_env_override(
+            model_file,
+            reward_config={
+                "scales": {
+                    "vel_reward": 0.0,
+                    "done": 0.0,
+                    "cyclic_hip": 0.0,
+                    "ref_rot": 0.0,
+                    "joint_angle_rew": 0.0,
+                    "action_l2": -0.2,
+                    "action_rate": -0.5,
+                }
+            },
+        ),
+    )
+    try:
+        state = NpEnvState(
+            obs=env._obs_dict(),
+            reward=np.zeros((1,), dtype=np.float32),
+            terminated=np.zeros((1,), dtype=bool),
+            truncated=np.zeros((1,), dtype=bool),
+            info={"steps": np.zeros((1,), dtype=np.uint32)},
+        )
+        env.apply_action(np.array([[2.0]], dtype=np.float32), state)
+        reward = env._compute_reward(np.zeros((1,), dtype=bool), state.info)
+
+        # Raw action is clipped to 1.0 for env control; regularization uses the
+        # clipped policy action so the scale is independent of unbounded policy output.
+        expected = -0.2 * 1.0 - 0.5 * 1.0
+        np.testing.assert_allclose(reward, [expected], atol=1e-6)
+        assert state.info["log"]["reward/action_l2"] == pytest.approx(-0.2)
+        assert state.info["log"]["reward/action_rate"] == pytest.approx(-0.5)
+    finally:
+        env.close()
+
+
+def test_myoleg_walk_flat_velocity_curriculum_controls_reward_target(tmp_path: Path):
+    from unilab.base import registry
+    from unilab.base.np_env import NpEnvState
+
+    registry.ensure_registries()
+    model_file = _minimal_mujoco_model(tmp_path / "myoleg_velocity_curriculum.xml")
+    env = registry.make(
+        "MyoLegWalkFlat",
+        sim_backend="mujoco",
+        env_cfg_override=_minimal_env_override(
+            model_file,
+            target_y_vel=1.0,
+            velocity_curriculum={
+                "enabled": True,
+                "initial_y_vel": 0.2,
+                "final_y_vel": 1.0,
+                "warmup_steps": 100,
+            },
+            reward_config={
+                "scales": {
+                    "vel_reward": 1.0,
+                    "done": 0.0,
+                    "cyclic_hip": 0.0,
+                    "ref_rot": 0.0,
+                    "joint_angle_rew": 0.0,
+                    "action_l2": 0.0,
+                    "action_rate": 0.0,
+                }
+            },
+        ),
+    )
+    try:
+        state = NpEnvState(
+            obs=env._obs_dict(),
+            reward=np.zeros((1,), dtype=np.float32),
+            terminated=np.zeros((1,), dtype=bool),
+            truncated=np.zeros((1,), dtype=bool),
+            info={"steps": np.zeros((1,), dtype=np.uint32)},
+        )
+
+        env.step_counter = 50
+        reward = env._compute_reward(np.zeros((1,), dtype=bool), state.info)
+
+        expected_target_y_vel = 0.6
+        expected_reward = np.exp(-(expected_target_y_vel**2)) + 1.0
+        assert env._current_target_y_vel() == pytest.approx(expected_target_y_vel)
+        np.testing.assert_allclose(reward, [expected_reward], atol=1e-6)
+        assert state.info["log"]["reward/target_y_vel"] == pytest.approx(expected_target_y_vel)
+        assert state.info["log"]["state/target_y_vel"] == pytest.approx(expected_target_y_vel)
     finally:
         env.close()
 
