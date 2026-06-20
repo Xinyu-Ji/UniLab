@@ -81,7 +81,12 @@
 
 ```bash
 # 0. 如果还没有安装 uv
+# Linux / macOS：
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows：
+# powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# choco install make -y
 
 # 1. 克隆仓库
 git clone https://github.com/unilabsim/UniLab.git
@@ -90,10 +95,8 @@ cd UniLab
 # 2. 安装依赖
 # 请按你的平台选择对应的安装命令。
 
-# Linux CUDA 或 macOS
-make setup-motrix
-# 不使用 shell completion 设置时：uv sync --extra motrix
-# 如果没有安装 `make`：uv sync --extra motrix && uv run --no-sync unilab-complete install
+# Linux CUDA、macOS 或 Windows
+make setup
 
 # Linux AMD / ROCm
 # make sync-rocm
@@ -101,14 +104,19 @@ make setup-motrix
 # Linux Intel Arc / iGPU
 # make sync-xpu
 
+# 不使用 shell completion 设置时：
+# uv sync --extra mujoco --extra motrix
+# 如果没有安装或无法使用 `make`：
+# uv sync --extra mujoco --extra motrix && uv run --no-sync unilab-complete install
+
 # 3. 预训练 checkpoint 回放（首次运行会从 Hugging Face 下载）
 uv run demo dance
 ```
 
-可用的 demo 名称：`teaser`、`dance`、`wallflip`、`boxtracking`、`locomani`、`inhandgrasp`。
+可用的 demo 名称：`teaser`、`dance`、`wallflip`、`wallflip2`、`boxtracking`、`locomani`、`inhandgrasp`。
 完整的命令与参数请参阅 [统一 CLI](https://unilabsim.github.io/UniLab-doc/zh_CN/2-user_guide/1-training/1-cli_reference.html) 页面。
 
-> 中国大陆用户：动作、场景和 demo checkpoint 首次运行时会从 Hugging Face 拉取。如果 `huggingface.co`
+> 中国大陆用户：动作、场景、机器人网格和 demo checkpoint 首次运行时会从 Hugging Face 拉取。如果 `huggingface.co`
 > 无法访问，请在运行 demo 命令前先将客户端切到社区镜像：
 >
 > ```bash
@@ -145,7 +153,6 @@ uv run train --algo appo --task sharpa_inhand --sim mujoco --profile hora
 ```
 
 > Grasp cache 首次训练时会自动从 Hugging Face (`unilabsim/unilab-caches`) 下载到 `src/unilab/assets/caches/`，无需手动操作；如需为自定义 scale 重新生成（较慢）：
->
 > ```bash
 > bash scripts/sharpa_collect_grasps.sh 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5
 > ```
@@ -173,22 +180,11 @@ uv run eval --algo ppo --task go2_arm_manip_loco --sim motrix --load-run -1
 
 海外用户可加入我们的 [Discord 服务器](https://discord.gg/EPCuguRmGX) 交流与获取帮助。
 
-| 微信群 | 作者微信 |
-| :---: | :---: |
-| <img src="docs/sphinx/source/_static/assets/unilab-wechat-group.jpg" alt="UniLab 微信群二维码" width="220"> | <img src="docs/sphinx/source/_static/assets/unilab-wechat-assistant.jpg" alt="UniLab 作者微信二维码" width="150"> |
-| 扫码加入 UniLab 微信群。 | 如果微信群已满，请添加作者微信，并备注`unilab交流`。 |
-
-## ⭐ Star 趋势
-
 <p align="center">
-  <a href="https://www.star-history.com/unilabsim/UniLab">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&theme=dark&legend=top-left" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&legend=top-left" />
-      <img src="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&legend=top-left" alt="UniLab Star 趋势图" width="70%">
-    </picture>
-  </a>
+  <img src="docs/sphinx/source/_static/assets/unilab-wechat-assistant.jpg" alt="UniLab 小助手微信二维码" width="180">
 </p>
+
+<p align="center">添加小助手微信进群，请备注：<code>unilab交流</code></p>
 
 ## 🧾 引用
 

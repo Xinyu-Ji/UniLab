@@ -80,8 +80,13 @@ Start with the `Quick Demo` below to run the primary training command. The recom
 </table>
 
 ```bash
-# 0. If uv is not installed
+# 0. Install uv if needed
+# Linux / macOS:
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows:
+# powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# choco install make -y
 
 # 1. Clone the repository
 git clone https://github.com/unilabsim/UniLab.git
@@ -90,10 +95,8 @@ cd UniLab
 # 2. Install dependencies
 # Pick the setup command for your platform.
 
-# Linux CUDA or macOS
-make setup-motrix
-# Without shell completion setup: uv sync --extra motrix
-# If `make` is not installed: uv sync --extra motrix && uv run --no-sync unilab-complete install
+# Linux CUDA, macOS, or Windows
+make setup
 
 # Linux AMD / ROCm
 # make sync-rocm
@@ -101,13 +104,18 @@ make setup-motrix
 # Linux Intel Arc / iGPU
 # make sync-xpu
 
+# Without shell completion setup:
+# uv sync --extra mujoco --extra motrix
+# If `make` is not installed or unavailable:
+# uv sync --extra mujoco --extra motrix && uv run --no-sync unilab-complete install
+
 # 3. Pre-trained checkpoint playback (downloads from Hugging Face on first run)
 uv run demo dance
 ```
 
-Available demo names: `teaser`, `dance`, `wallflip`, `boxtracking`, `locomani`, `inhandgrasp`. See the [Unified CLI](https://unilabsim.github.io/UniLab-doc/en/2-user_guide/1-training/1-cli_reference.html) page for the full list and flags.
+Available demo names: `teaser`, `dance`, `wallflip`, `wallflip2`, `boxtracking`, `locomani`, `inhandgrasp`. See the [Unified CLI](https://unilabsim.github.io/UniLab-doc/en/2-user_guide/1-training/1-cli_reference.html) page for the full list and flags.
 
-> Mainland China users: motions, scenes, and demo checkpoints are pulled from Hugging Face on first run. If `huggingface.co` is unreachable, point the client at the community mirror before running demo commands:
+> Mainland China users: motions, scenes, robot meshes, and demo checkpoints are pulled from Hugging Face on first run. If `huggingface.co` is unreachable, point the client at the community mirror before running demo commands:
 >
 > ```bash
 > export HF_ENDPOINT=https://hf-mirror.com
@@ -143,7 +151,6 @@ uv run train --algo appo --task sharpa_inhand --sim mujoco --profile hora
 ```
 
 > Grasp caches auto-download from Hugging Face (`unilabsim/unilab-caches`) on first run into `src/unilab/assets/caches/`; no manual step is needed. To regenerate locally for custom scales (slow):
->
 > ```bash
 > bash scripts/sharpa_collect_grasps.sh 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5
 > ```
@@ -171,22 +178,11 @@ Use the published [UniLab documentation](https://unilabsim.github.io/UniLab-doc/
 
 Join our [Discord server](https://discord.gg/EPCuguRmGX) to chat with the community and get help.
 
-| WeChat Group | Author WeChat |
-| :---: | :---: |
-| <img src="docs/sphinx/source/_static/assets/unilab-wechat-group.jpg" alt="UniLab WeChat group QR code" width="220"> | <img src="docs/sphinx/source/_static/assets/unilab-wechat-assistant.jpg" alt="UniLab author WeChat QR code" width="150"> |
-| Scan to join the UniLab WeChat group. | If the group is full, add the author and include `unilab交流` in your message. |
-
-## ⭐ Star History
-
 <p align="center">
-  <a href="https://www.star-history.com/unilabsim/UniLab">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&theme=dark&legend=top-left" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&legend=top-left" />
-      <img src="https://api.star-history.com/chart?repos=unilabsim/UniLab&type=date&legend=top-left" alt="UniLab Star History Chart" width="70%">
-    </picture>
-  </a>
+  <img src="docs/sphinx/source/_static/assets/unilab-wechat-assistant.jpg" alt="UniLab WeChat assistant QR code" width="180">
 </p>
+
+<p align="center">Add the assistant on WeChat to join the group. Please include <code>UniLab community</code> in your request.</p>
 
 ## 🧾 Citation
 

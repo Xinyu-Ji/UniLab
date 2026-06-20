@@ -12,7 +12,9 @@ environment / loader initialisation, never inside step or reset.
 from __future__ import annotations
 
 import logging
+import ntpath
 import os
+import posixpath
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -24,6 +26,7 @@ _HF_MOTIONS_REPO_ID = "unilabsim/unilab-motions"
 _HF_CACHES_REPO_ID = "unilabsim/unilab-caches"
 _HF_SCENES_REPO_ID = "unilabsim/unilab-scenes"
 _HF_CHECKPOINTS_REPO_ID = "unilabsim/unilab-checkpoints"
+_HF_ROBOTS_REPO_ID = "unilabsim/unilab-robots"
 _HF_REPO_TYPE = "dataset"
 _HF_OFFICIAL_ENDPOINT = "https://huggingface.co"
 
@@ -88,22 +91,23 @@ def resolve_checkpoint_file(
 def _resolve_single(path_str: str, *, repo_id: str = _HF_MOTIONS_REPO_ID) -> str:
     """Resolve one asset file path, downloading if absent."""
     path = Path(path_str)
+    is_absolute_input = path.is_absolute() or ntpath.isabs(path_str) or posixpath.isabs(path_str)
 
     # Already exists locally — fast path.
     if path.exists():
         return str(path)
 
     # Try interpreting as ASSETS_ROOT_PATH-relative.
-    if not path.is_absolute():
+    if not is_absolute_input:
         local = ASSETS_ROOT_PATH / path
         if local.exists():
             return str(local)
-        relative = path_str
+        relative = _hf_relative_path(path_str)
     else:
         # Extract the portion relative to ASSETS_ROOT_PATH so we can
         # request the matching file from the HF repo.
         try:
-            relative = str(path.relative_to(ASSETS_ROOT_PATH))
+            relative = path.relative_to(ASSETS_ROOT_PATH).as_posix()
         except ValueError:
             raise FileNotFoundError(
                 f"Asset file not found and path is not under "
@@ -111,6 +115,11 @@ def _resolve_single(path_str: str, *, repo_id: str = _HF_MOTIONS_REPO_ID) -> str
             ) from None
 
     return _download_from_hf(relative, repo_id=repo_id)
+
+
+def _hf_relative_path(path_str: str) -> str:
+    """Return a repo-relative HF path with POSIX separators."""
+    return path_str.replace("\\", "/")
 
 
 def _hf_download(hf_hub_download, relative_path: str, *, repo_id: str) -> str:  # type: ignore[no-untyped-def]
@@ -190,17 +199,22 @@ def _snapshot_download(snapshot_download_fn, directory: str, *, repo_id: str) ->
     )
 
 
-def resolve_scene_dir(directory: str, *, marker: str = "teaser.xml") -> Path:
-    """Ensure a scene directory exists locally, downloading from HF if needed.
+def _resolve_snapshot_dir(directory: str, *, repo_id: str, marker: str) -> Path:
+    """Ensure an HF-hosted directory exists locally, downloading if needed.
+
+    If the current ``HF_ENDPOINT`` (e.g. a mirror) fails, automatically
+    retries with the official ``https://huggingface.co`` endpoint.
 
     Args:
         directory: ``ASSETS_ROOT_PATH``-relative directory path
-            (e.g. ``"scenes/teaser"``).
+            (e.g. ``"scenes/teaser"`` or ``"robots/x2/meshes"``).
+        repo_id: HF dataset repo to pull from.
         marker: A file inside the directory used to check completeness.
 
     Returns:
         Absolute ``Path`` to the resolved directory.
     """
+    hf_directory = _hf_relative_path(directory)
     target = ASSETS_ROOT_PATH / directory
     if (target / marker).is_file():
         return target
@@ -209,18 +223,17 @@ def resolve_scene_dir(directory: str, *, marker: str = "teaser.xml") -> Path:
         from huggingface_hub import snapshot_download
     except ImportError:
         raise ImportError(
-            f"Scene directory '{directory}' not found locally. "
+            f"Asset directory '{directory}' not found locally. "
             "Install huggingface_hub to enable automatic downloading:\n"
             "  uv sync\n"
             "Or:\n"
             "  uv pip install huggingface_hub"
         ) from None
 
-    repo_id = _HF_SCENES_REPO_ID
-    logger.info("Downloading %s from HF repo %s ...", directory, repo_id)
+    logger.info("Downloading %s from HF repo %s ...", hf_directory, repo_id)
 
     try:
-        _snapshot_download(snapshot_download, directory, repo_id=repo_id)
+        _snapshot_download(snapshot_download, hf_directory, repo_id=repo_id)
     except Exception:
         current_endpoint = os.environ.get("HF_ENDPOINT", "")
         if current_endpoint and current_endpoint != _HF_OFFICIAL_ENDPOINT:
@@ -232,11 +245,45 @@ def resolve_scene_dir(directory: str, *, marker: str = "teaser.xml") -> Path:
             original = os.environ["HF_ENDPOINT"]
             os.environ["HF_ENDPOINT"] = _HF_OFFICIAL_ENDPOINT
             try:
-                _snapshot_download(snapshot_download, directory, repo_id=repo_id)
+                _snapshot_download(snapshot_download, hf_directory, repo_id=repo_id)
             finally:
                 os.environ["HF_ENDPOINT"] = original
         else:
             raise
 
-    logger.info("Downloaded scene directory to %s", target)
+    logger.info("Downloaded directory to %s", target)
     return target
+
+
+def resolve_scene_dir(directory: str, *, marker: str = "teaser.xml") -> Path:
+    """Ensure a scene directory exists locally, downloading from HF if needed.
+
+    Args:
+        directory: ``ASSETS_ROOT_PATH``-relative directory path
+            (e.g. ``"scenes/teaser"``).
+        marker: A file inside the directory used to check completeness.
+
+    Returns:
+        Absolute ``Path`` to the resolved directory.
+    """
+    return _resolve_snapshot_dir(directory, repo_id=_HF_SCENES_REPO_ID, marker=marker)
+
+
+def resolve_robot_asset_dir(directory: str, *, marker: str) -> Path:
+    """Ensure a robot asset directory (e.g. meshes) exists locally.
+
+    Robot binary assets (STL meshes) are hosted on Hugging Face rather than
+    committed to git. They are downloaded on first use and placed under their
+    original path beneath ``ASSETS_ROOT_PATH`` so that XML ``meshdir``
+    references resolve unchanged — no files need to be moved by hand.
+
+    Args:
+        directory: ``ASSETS_ROOT_PATH``-relative directory path
+            (e.g. ``"robots/x2/meshes"``).
+        marker: A file inside the directory used to check completeness
+            (e.g. ``"pelvis.STL"``).
+
+    Returns:
+        Absolute ``Path`` to the resolved directory.
+    """
+    return _resolve_snapshot_dir(directory, repo_id=_HF_ROBOTS_REPO_ID, marker=marker)

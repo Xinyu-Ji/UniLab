@@ -274,6 +274,7 @@ def test_demo_registry_contains_expected_entries() -> None:
     assert set(demo.DEMO_REGISTRY) == {
         "dance",
         "wallflip",
+        "wallflip2",
         "boxtracking",
         "locomani",
         "sharpa_appo_student",
@@ -282,6 +283,12 @@ def test_demo_registry_contains_expected_entries() -> None:
     }
     assert demo.DEMO_REGISTRY["locomani"].entry == "play_interactive"
     assert demo.DEMO_REGISTRY["locomani"].sim == "mujoco"
+    assert demo.DEMO_REGISTRY["wallflip2"] == demo.DemoSpec(
+        algo="ppo",
+        task="x2_wall_flip_tracking",
+        sim="mujoco",
+        entry="play_interactive",
+    )
     assert demo.DEMO_REGISTRY["inhandgrasp"] == demo.DemoSpec(
         algo="hora_distill",
         task="sharpa_inhand",
@@ -335,6 +342,25 @@ def test_demo_play_interactive_entry_assembles_locomani_command(
     assert command[4:8] == ["--task", "go2_arm_manip_loco", "--sim", "mujoco"]
     assert f"algo.load_run={abs_pt}" in command
     assert "training.device=cpu" in command
+    assert "interactive.camera_follow_body=false" in command
+
+
+def test_demo_play_interactive_entry_assembles_wallflip2_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_demo_checkout(tmp_path, demo_name="wallflip2")
+    monkeypatch.setattr(demo.platform, "system", lambda: "Linux")
+    abs_pt = str(tmp_path / "fake" / "model_0.pt")
+    command = demo.build_demo_command(
+        demo_name="wallflip2", checkpoint_path=abs_pt, device="cpu", root=tmp_path
+    )
+
+    assert command[0] == sys.executable
+    assert command[1] == str(tmp_path / "scripts" / "play_interactive.py")
+    assert command[2:4] == ["--algo", "ppo"]
+    assert command[4:8] == ["--task", "x2_wall_flip_tracking", "--sim", "mujoco"]
+    assert f"algo.load_run={abs_pt}" in command
+    assert "training.device=cpu" in command
 
 
 def test_demo_play_interactive_entry_assembles_inhandgrasp_command(
@@ -356,6 +382,7 @@ def test_demo_play_interactive_entry_assembles_inhandgrasp_command(
     assert command[4:8] == ["--task", "sharpa_inhand", "--sim", "mujoco_nodr"]
     assert f"algo.load_run={abs_pt}" in command
     assert "training.device=cpu" in command
+    assert "interactive.camera_follow_body=false" in command
 
 
 def test_demo_play_interactive_hora_distill_nodr_command(tmp_path: Path) -> None:
@@ -535,7 +562,7 @@ def test_demo_local_only_checkpoint_missing_warns_without_hf_download(
     output = capsys.readouterr().out
     assert rc == 1
     assert "Checkpoint not found" in output
-    assert "checkpoints/sharpa_appo_student/model_0.pt" in output
+    assert "checkpoints/sharpa_appo_student/model_0.pt" in output.replace("\\", "/")
 
 
 def test_demo_local_only_checkpoint_uses_existing_file(

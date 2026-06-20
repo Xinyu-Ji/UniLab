@@ -47,6 +47,7 @@ from unilab.training import (
     get_latest_run as get_latest_run_common,
 )
 from unilab.training.experiment import ExperimentTracker
+from unilab.training.sim2sim import policy_load_dim_guard, resolve_sim2sim_config
 
 ensure_registries()
 
@@ -196,6 +197,23 @@ def _get_log_root(cfg: DictConfig) -> Path:
 def play_mlx_ppo(cfg: DictConfig, dtype, use_fp16: bool, resolved_sim_backend: str) -> str | None:
     """Play mode for MLX PPO."""
     mx = _require_mlx_runtime().mx
+
+    task_log_root = _get_log_root(cfg) / cfg.training.task_name
+    load_path, run_dir = parse_checkpoint_path(cfg, root_dir=ROOT_DIR, suffix=".safetensors")
+    if load_path is None or run_dir is None or not load_path.exists():
+        print(f"Could not find valid model checkpoint from load_run={cfg.algo.load_run}")
+        return None
+
+    cfg = (
+        resolve_sim2sim_config(
+            run_dir,
+            cfg,
+            algo_name="ppo",
+            strict=bool(getattr(cfg.training, "sim2sim_strict", True)),
+        )
+        or cfg
+    )
+
     env_cfg_override = BackendAdapter(
         cfg, root_dir=ROOT_DIR, algo_name="ppo"
     ).build_task_env_cfg_override()
@@ -217,14 +235,8 @@ def play_mlx_ppo(cfg: DictConfig, dtype, use_fp16: bool, resolved_sim_backend: s
     action_dim = int(action_shape[0])
     model = build_model(cfg.algo, obs_dim, action_dim, dtype=play_model_dtype)
 
-    task_log_root = _get_log_root(cfg) / cfg.training.task_name
-    load_path, run_dir = parse_checkpoint_path(cfg, root_dir=ROOT_DIR, suffix=".safetensors")
-    if load_path is None or run_dir is None or not load_path.exists():
-        print(f"Could not find valid model checkpoint from load_run={cfg.algo.load_run}")
-        env.close()
-        return None
-
-    model.load_weights(str(load_path), strict=True)
+    with policy_load_dim_guard(env_obs_dim=obs_dim, env_action_dim=action_dim, algo_name="ppo"):
+        model.load_weights(str(load_path), strict=True)
     print(f"[MLX PPO] Loaded model: {load_path}")
 
     # Export actor to ONNX (convert MLX weights → PyTorch)
@@ -313,28 +325,23 @@ def play_mlx_ppo(cfg: DictConfig, dtype, use_fp16: bool, resolved_sim_backend: s
         return mx.nan_to_num(raw_obs, nan=0.0, posinf=0.0, neginf=0.0)
 
     output_dir = run_dir if run_dir is not None else task_log_root
-    try:
-        play_video_path = env.run_playback_mode(
-            play_render_mode=getattr(cfg.training, "play_render_mode", "auto"),
-            play_steps=getattr(cfg.training, "play_steps", None),
-            output_video=output_dir / "play_video.mp4",
-            initialize=lambda: obs,
-            step=_play_step,
-            camera_kwargs={
-                "cam_distance": getattr(cfg.training, "cam_distance", 2.0),
-                "cam_elevation": getattr(cfg.training, "cam_elevation", -20.0),
-                "cam_azimuth": getattr(cfg.training, "cam_azimuth", 90.0),
-                "cam_lookat": getattr(cfg.training, "cam_lookat", None),
-                "cam_tracking": getattr(cfg.training, "cam_tracking", False),
-                "cam_tracking_env_idx": getattr(cfg.training, "cam_tracking_env_idx", 0),
-                "cam_tracking_extra_envs": getattr(cfg.training, "cam_tracking_extra_envs", 2),
-            },
-            on_plan=lambda plan: log_playback_plan(plan, prefix="[MLX PPO] "),
-        )
-    except ImportError:
-        print("mediapy is required for play video export. Install with `pip install mediapy`.")
-        env.close()
-        return None
+    play_video_path = env.run_playback_mode(
+        play_render_mode=getattr(cfg.training, "play_render_mode", "auto"),
+        play_steps=getattr(cfg.training, "play_steps", None),
+        output_video=output_dir / "play_video.mp4",
+        initialize=lambda: obs,
+        step=_play_step,
+        camera_kwargs={
+            "cam_distance": getattr(cfg.training, "cam_distance", 2.0),
+            "cam_elevation": getattr(cfg.training, "cam_elevation", -20.0),
+            "cam_azimuth": getattr(cfg.training, "cam_azimuth", 90.0),
+            "cam_lookat": getattr(cfg.training, "cam_lookat", None),
+            "cam_tracking": getattr(cfg.training, "cam_tracking", False),
+            "cam_tracking_env_idx": getattr(cfg.training, "cam_tracking_env_idx", 0),
+            "cam_tracking_extra_envs": getattr(cfg.training, "cam_tracking_extra_envs", 2),
+        },
+        on_plan=lambda plan: log_playback_plan(plan, prefix="[MLX PPO] "),
+    )
     if play_video_path is not None:
         print(f"[MLX PPO] Play video saved: {play_video_path}")
     else:

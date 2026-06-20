@@ -29,6 +29,9 @@ class DemoSpec:
 DEMO_REGISTRY: dict[str, DemoSpec] = {
     "dance": DemoSpec(algo="ppo", task="g1_motion_tracking", sim="motrix", entry="eval"),
     "wallflip": DemoSpec(algo="ppo", task="g1_wall_flip_tracking", sim="motrix", entry="eval"),
+    "wallflip2": DemoSpec(
+        algo="ppo", task="x2_wall_flip_tracking", sim="mujoco", entry="play_interactive"
+    ),
     "boxtracking": DemoSpec(algo="ppo", task="g1_box_tracking", sim="motrix", entry="eval"),
     "locomani": DemoSpec(
         algo="ppo", task="go2_arm_manip_loco", sim="mujoco", entry="play_interactive"
@@ -49,6 +52,10 @@ DEMO_REGISTRY: dict[str, DemoSpec] = {
 }
 
 _LOCAL_ONLY_CHECKPOINT_DEMOS = {"sharpa_appo_student"}
+_DEMO_PLAY_INTERACTIVE_OVERRIDES: dict[str, tuple[str, ...]] = {
+    "locomani": ("interactive.camera_follow_body=false",),
+    "inhandgrasp": ("interactive.camera_follow_body=false",),
+}
 
 
 def _repo_root() -> Path:
@@ -258,6 +265,7 @@ def build_demo_command(
     extra: list[str] = []
     if device is not None:
         extra.append(f"training.device={device}")
+    extra.extend(_DEMO_PLAY_INTERACTIVE_OVERRIDES.get(demo_name, ()))
 
     if spec.entry == "eval":
         return build_command(

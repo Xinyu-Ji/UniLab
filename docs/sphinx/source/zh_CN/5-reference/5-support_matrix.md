@@ -57,17 +57,17 @@ uv run scripts/generate_support_matrix.py --write
 | PPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested |
 | PPO (torch) | `g1_flip_tracking` (G1 flip tracking) | Tested | Tested |
 | PPO (torch) | `g1_wall_flip_tracking` (G1 wall flip tracking) | Tested | Tested |
+| PPO (torch) | `x2_wall_flip_tracking` (X2 wall flip tracking) | Tested | - |
 | PPO (torch) | `allegro_inhand` (Allegro in-hand) | Tested | Tested |
 | PPO (torch) | `sharpa_inhand` (Sharpa in-hand) | Tested | Tested |
 | PPO (torch) | `sharpa_inhand_grasp` (Sharpa in-hand grasp) | Tested | Tested |
 | PPO (torch) | `allegro_inhand_grasp` (allegro inhand grasp) | Tested | Tested |
 | PPO (torch) | `g1_box_tracking` (g1 box tracking) | Tested | Tested |
 | PPO (torch) | `g1_climb_tracking` (g1 climb tracking) | Tested | Tested |
-| PPO (torch) | `g1_motion_tracking_deploy` (g1 motion tracking deploy) | Tested | Tested |
+| PPO (torch) | `g1_motion_tracking_deploy` (g1 motion tracking deploy) | Tested | Registered |
 | PPO (torch) | `go1_joystick_rough` (go1 joystick rough) | Tested | Tested |
 | PPO (torch) | `go2_arm_manip_loco` (go2 arm manip loco) | Tested | Tested |
 | PPO (torch) | `go2_footstand` (go2 footstand) | Tested | - |
-| PPO (torch) | `go2_handstand` (go2 handstand) | Tested | Tested |
 | PPO (torch) | `go2w_joystick_flat` (go2w joystick flat) | Tested | Tested |
 | PPO (torch) | `go2w_joystick_rough` (go2w joystick rough) | Tested | Tested |
 | PPO (torch) | `stewart_balance` (stewart balance) | Tested | Tested |
@@ -78,21 +78,21 @@ uv run scripts/generate_support_matrix.py --write
 | PPO (mlx) | `g1_motion_tracking` (G1 motion tracking) | Configured | Configured |
 | PPO (mlx) | `g1_flip_tracking` (G1 flip tracking) | Configured | Configured |
 | PPO (mlx) | `g1_wall_flip_tracking` (G1 wall flip tracking) | Configured | Configured |
+| PPO (mlx) | `x2_wall_flip_tracking` (X2 wall flip tracking) | Configured | - |
 | PPO (mlx) | `allegro_inhand` (Allegro in-hand) | Configured | Configured |
 | PPO (mlx) | `sharpa_inhand` (Sharpa in-hand) | Configured | Configured |
 | PPO (mlx) | `sharpa_inhand_grasp` (Sharpa in-hand grasp) | Configured | Configured |
 | PPO (mlx) | `allegro_inhand_grasp` (allegro inhand grasp) | Configured | Configured |
 | PPO (mlx) | `g1_box_tracking` (g1 box tracking) | Configured | Configured |
 | PPO (mlx) | `g1_climb_tracking` (g1 climb tracking) | Configured | Configured |
-| PPO (mlx) | `g1_motion_tracking_deploy` (g1 motion tracking deploy) | Configured | Configured |
+| PPO (mlx) | `g1_motion_tracking_deploy` (g1 motion tracking deploy) | Configured | Registered |
 | PPO (mlx) | `go1_joystick_rough` (go1 joystick rough) | Configured | Configured |
 | PPO (mlx) | `go2_arm_manip_loco` (go2 arm manip loco) | Configured | Configured |
 | PPO (mlx) | `go2_footstand` (go2 footstand) | Configured | - |
-| PPO (mlx) | `go2_handstand` (go2 handstand) | Configured | Configured |
 | PPO (mlx) | `go2w_joystick_flat` (go2w joystick flat) | Configured | Configured |
 | PPO (mlx) | `go2w_joystick_rough` (go2w joystick rough) | Configured | Configured |
 | PPO (mlx) | `stewart_balance` (stewart balance) | Configured | Configured |
-| APPO (torch) | `go1_joystick_flat` (Go1 joystick) | Tested | Registered |
+| APPO (torch) | `go1_joystick_flat` (Go1 joystick) | Tested | Tested |
 | APPO (torch) | `go2_joystick_flat` (Go2 joystick) | Tested | Tested |
 | APPO (torch) | `g1_walk_flat` (G1 walk flat) | Tested | Registered |
 | APPO (torch) | `g1_motion_tracking` (G1 motion tracking) | Tested | Tested |
