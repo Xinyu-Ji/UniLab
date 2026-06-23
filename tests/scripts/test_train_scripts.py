@@ -328,6 +328,8 @@ def test_offpolicy_hydra_default_trace_flags():
     assert cfg.training.trace_thread_time is False
     assert cfg.training.trace_cuda_events is True
     assert cfg.training.verbose_metrics is False
+    assert cfg.training.multi_gpu_sync_mode == "local_sgd"
+    assert cfg.training.multi_gpu_sync_interval == 1
     assert "replay_h2d_submitter" not in cfg.training
 
 
@@ -1396,6 +1398,17 @@ def test_offpolicy_build_failure_summary_preserves_failed_status():
     assert summary["error"] == "collector died"
 
 
+def test_offpolicy_build_run_dir_name_adds_gpu_suffix_only_for_multigpu():
+    mod = _offpolicy()
+
+    assert mod.build_run_dir_name("2026-06-22_22-31-24", "mujoco", 1) == (
+        "2026-06-22_22-31-24_mujoco"
+    )
+    assert mod.build_run_dir_name("2026-06-22_22-31-24", "mujoco", 2) == (
+        "2026-06-22_22-31-24_mujoco_2xGPU"
+    )
+
+
 def test_offpolicy_main_failure_summary_and_skips_playback(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
@@ -2423,25 +2436,26 @@ def test_offpolicy_flashsac_rejects_multi_gpu():
         ]
     )
 
-    with pytest.raises(ValueError, match="FlashSAC does not support training.num_gpus > 1"):
+    with pytest.raises(ValueError, match="Only SAC supports training.num_gpus > 1"):
         _offpolicy().build_runner("flashsac", cfg)
 
 
-def test_offpolicy_sac_multi_gpu_rejected_by_double_buffer():
+def test_offpolicy_sac_multi_gpu_requires_cuda_device():
     cfg = _offpolicy_cfg(
         [
             "algo=sac",
             "task=sac/g1_walk_flat/mujoco",
             "training.num_gpus=2",
             "training.device=cpu",
+            "algo.obs_normalization=false",
         ]
     )
 
-    with pytest.raises(ValueError, match="currently single-GPU only"):
+    with pytest.raises(ValueError, match="requires a CUDA device"):
         _offpolicy().build_runner("sac", cfg)
 
 
-def test_offpolicy_sac_multi_gpu_rejects_even_with_explicit_symmetry_disable():
+def test_offpolicy_sac_multi_gpu_requires_cuda_even_with_explicit_symmetry_disable():
     cfg = _offpolicy_cfg(
         [
             "algo=sac",
@@ -2449,10 +2463,11 @@ def test_offpolicy_sac_multi_gpu_rejects_even_with_explicit_symmetry_disable():
             "training.num_gpus=2",
             "training.device=cpu",
             "algo.use_symmetry=false",
+            "algo.obs_normalization=false",
         ]
     )
 
-    with pytest.raises(ValueError, match="currently single-GPU only"):
+    with pytest.raises(ValueError, match="requires a CUDA device"):
         _offpolicy().build_runner("sac", cfg)
 
 
